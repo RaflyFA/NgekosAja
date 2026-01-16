@@ -1,31 +1,39 @@
 import { supabase } from "@/lib/supabase"
 import { PropertyDetailPage } from "@/components/property-detail-page"
 
-// Perhatikan tipe data 'params' di sini berubah menjadi Promise
+// PENTING: Paksa halaman ini untuk selalu ambil data terbaru (tidak cache)
+export const revalidate = 0 
+
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   
-  // 1. WAJIB: Kita harus 'await' params dulu di Next.js 15
+  // 1. Ambil ID dari URL
   const { id } = await params 
 
-  // 2. Ambil data dari database berdasarkan ID yang sudah didapat
+  // 2. PERBAIKAN UTAMA:
+  // Ubah 'properties' menjadi 'boarding_houses' (Tabel yang benar)
   const { data: detailKos, error } = await supabase
-    .from('properties')
+    .from('boarding_houses')
     .select('*')
-    .eq('id', id) // Gunakan variable 'id' yang sudah di-await
+    .eq('id', id)
     .single()
 
-  // Cek terminal
-  if (detailKos) {
-    console.log("✅ Berhasil ambil detail kos:", detailKos.name)
-  } else {
+  // 3. Cek Error / Kosong
+  if (error || !detailKos) {
     console.error("❌ Gagal ambil data:", error)
+    return (
+        <div className="min-h-screen flex items-center justify-center">
+            <h1 className="text-xl font-bold text-red-500">
+                Kos tidak ditemukan atau ID salah.
+            </h1>
+        </div>
+    )
   }
 
- return (
+  console.log("✅ Berhasil ambil detail kos:", detailKos.name)
+
+  return (
     <main>
-      {/* SEBELUMNYA: <PropertyDetailPage propertyId={id} /> */}
-      
-      {/* UBAH JADI INI: Kita kirim seluruh data 'detailKos' ke dalam props bernama 'dataKos' */}
+      {/* Kirim data kos yang berhasil diambil ke komponen tampilan */}
       <PropertyDetailPage dataKos={detailKos} />
     </main>
   )

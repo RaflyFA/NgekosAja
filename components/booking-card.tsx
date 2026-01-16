@@ -3,12 +3,20 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { MessageCircle } from "lucide-react"
-import { supabase } from "@/lib/supabase" 
-import { useRouter } from "next/navigation" 
+import { supabase } from "@/lib/supabase"
+import { useRouter } from "next/navigation"
+
+interface Room {
+  id: string
+  room_number: string
+  floor: number | null
+  price_per_month: number
+  is_occupied: boolean
+}
 
 interface BookingCardProps {
   price: number
-  propertyId: string 
+  propertyId: string
 }
 
 export function BookingCard({ price, propertyId }: BookingCardProps) {
@@ -16,12 +24,17 @@ export function BookingCard({ price, propertyId }: BookingCardProps) {
   const [isSticky, setIsSticky] = useState(false)
   const [duration, setDuration] = useState("1")
   const [checkInDate, setCheckInDate] = useState("")
-  
+
   const [guestName, setGuestName] = useState("")
   const [guestPhone, setGuestPhone] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
   const [isMobileFixed, setIsMobileFixed] = useState(false)
+
+  // Room selection state
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [selectedRoomId, setSelectedRoomId] = useState("")
+  const [loadingRooms, setLoadingRooms] = useState(true)
 
   useEffect(() => {
     const handleScroll = () => {
@@ -33,6 +46,30 @@ export function BookingCard({ price, propertyId }: BookingCardProps) {
     window.addEventListener("scroll", handleScroll)
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
+
+  // Fetch available rooms
+  useEffect(() => {
+    fetchAvailableRooms()
+  }, [propertyId])
+
+  const fetchAvailableRooms = async () => {
+    setLoadingRooms(true)
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('kos_id', propertyId)
+        .order('room_number')
+
+      if (!error && data) {
+        setRooms(data)
+      }
+    } catch (error) {
+      console.error("Error fetching rooms:", error)
+    } finally {
+      setLoadingRooms(false)
+    }
+  }
 
   const formatPrice = (amount: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -50,10 +87,16 @@ export function BookingCard({ price, propertyId }: BookingCardProps) {
       return;
     }
 
+    if (!selectedRoomId && rooms.length > 0) {
+      alert("Harap pilih nomor kamar!");
+      return;
+    }
+
     setIsLoading(true);
 
     const { error } = await supabase.from('bookings').insert({
       property_id: propertyId,
+      room_id: selectedRoomId || null,
       guest_name: guestName,
       guest_phone: guestPhone,
       start_date: checkInDate,
@@ -70,6 +113,7 @@ export function BookingCard({ price, propertyId }: BookingCardProps) {
       setGuestName("");
       setGuestPhone("");
       setCheckInDate("");
+      setSelectedRoomId("");
     }
 
     setIsLoading(false);
@@ -99,7 +143,7 @@ export function BookingCard({ price, propertyId }: BookingCardProps) {
   return (
     <div className={`space-y-6 ${isSticky ? "sticky top-20 lg:block" : ""} hidden lg:block`}>
       <div className="bg-card rounded-lg border border-border p-6 space-y-6">
-        
+
         {/* Price Section */}
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">Harga per bulan</p>
@@ -111,22 +155,22 @@ export function BookingCard({ price, propertyId }: BookingCardProps) {
 
         {/* INPUT DATA PENYEWA (BARU) */}
         <div className="space-y-3 pt-4 border-t border-border">
-            <h3 className="font-semibold text-sm">Data Penyewa</h3>
-            
-            <input
-              type="text"
-              placeholder="Nama Lengkap"
-              value={guestName}
-              onChange={(e) => setGuestName(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-             <input
-              type="tel"
-              placeholder="Nomor WhatsApp (08xxxx)"
-              value={guestPhone}
-              onChange={(e) => setGuestPhone(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+          <h3 className="font-semibold text-sm">Data Penyewa</h3>
+
+          <input
+            type="text"
+            placeholder="Nama Lengkap"
+            value={guestName}
+            onChange={(e) => setGuestName(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <input
+            type="tel"
+            placeholder="Nomor WhatsApp (08xxxx)"
+            value={guestPhone}
+            onChange={(e) => setGuestPhone(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          />
         </div>
 
         {/* Duration Selector */}
@@ -155,16 +199,56 @@ export function BookingCard({ price, propertyId }: BookingCardProps) {
           />
         </div>
 
+        {/* Room Selector */}
+        <div className="space-y-3">
+          <label className="text-sm font-semibold text-foreground">Pilih Kamar</label>
+          {loadingRooms ? (
+            <div className="text-sm text-muted-foreground">Memuat kamar...</div>
+          ) : rooms.length === 0 ? (
+            <div className="p-3 rounded-lg bg-yellow-50 border border-yellow-200">
+              <p className="text-sm text-yellow-800">
+                Belum ada kamar tersedia. Silakan hubungi pemilik.
+              </p>
+            </div>
+          ) : (
+            <select
+              value={selectedRoomId}
+              onChange={(e) => setSelectedRoomId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            >
+              <option value="">-- Pilih Nomor Kamar --</option>
+              {rooms.map((room) => (
+                <option
+                  key={room.id}
+                  value={room.id}
+                  disabled={room.is_occupied}
+                >
+                  Kamar {room.room_number}
+                  {room.floor ? ` (Lt. ${room.floor})` : ""} -
+                  {room.is_occupied ? " 🔴 Terisi" : " 🟢 Tersedia"} -
+                  {formatPrice(room.price_per_month)}/bln
+                </option>
+              ))}
+            </select>
+          )}
+          {rooms.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {rooms.filter(r => !r.is_occupied).length} kamar tersedia dari {rooms.length} total kamar
+            </p>
+          )}
+        </div>
+
         {/* Action Buttons */}
         <div className="space-y-3">
-          <Button 
+          <Button
             className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
             onClick={handleBooking}
             disabled={isLoading}
           >
             {isLoading ? "Memproses..." : "Ajukan Sewa"}
           </Button>
-          
+
           <Button variant="outline" className="w-full gap-2 bg-transparent">
             <MessageCircle className="w-4 h-4" />
             Chat Pemilik

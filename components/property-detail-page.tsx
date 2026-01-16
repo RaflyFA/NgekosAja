@@ -11,21 +11,24 @@ export function PropertyDetailPage({ dataKos }: { dataKos: any }) {
     id: dataKos.id,
     name: dataKos.name,
     location: dataKos.city,
-    price: dataKos.price_per_month, 
+    
+    // PERBAIKAN UTAMA DI SINI:
+    // Gunakan 'price' (sesuai database), JANGAN 'price_per_month'
+    price: dataKos.price, 
+    
     type: (dataKos.category || "Campur"), 
     rating: 4.8, 
     reviews: 15,
     verified: true,
     
-    // PENTING: Supabase cuma punya 1 gambar (string), tapi Gallery butuh Array (list).
-    // Jadi kita bungkus dalam kurung siku [ ]
+    // Logic Gambar
     images: dataKos.image_url 
-      ? [dataKos.image_url, "/placeholder.svg"] // Jika ada gambar, pakai. Tambah placeholder biar gallery gak sepi.
-      : ["/placeholder.svg"], 
+      ? [dataKos.image_url, "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?q=80&w=2070&auto=format&fit=crop"] 
+      : ["https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?q=80&w=2070&auto=format&fit=crop"], 
 
     description: dataKos.description || "Belum ada deskripsi untuk kos ini.",
 
-    // Fasilitas kita biarkan default dulu karena format di DB mungkin berbeda
+    // Fasilitas Default
     facilities: [
       { name: "WiFi", icon: "wifi" },
       { name: "AC", icon: "air-vent" },
@@ -69,7 +72,6 @@ export function PropertyDetailPage({ dataKos }: { dataKos: any }) {
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-yellow-100 text-yellow-800 text-sm font-medium">
                       ⭐ {property.rating} ({property.reviews} ulasan)
                     </span>
-                    {/* Menampilkan Tipe Kos (Putra/Putri) */}
                     <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm font-medium uppercase">
                       {property.type}
                     </span>
@@ -100,6 +102,7 @@ export function PropertyDetailPage({ dataKos }: { dataKos: any }) {
           </div>
 
           <div className="lg:col-span-1">
+            {/* Kirim harga yang sudah benar ke BookingCard */}
             <BookingCard price={property.price} propertyId={property.id} />
           </div>
         </div>

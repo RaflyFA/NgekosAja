@@ -1,15 +1,5 @@
 import { PropertyCard } from "@/components/property-card"
 
-interface Property {
-  id: string
-  name: string
-  city: string
-  price_per_month: number
-  image_url: string
-  rating?: number
-  category?: string
-}
-
 export function PropertyListing({ properties = [] }: { properties: any[] }) {
   
   return (
@@ -20,26 +10,33 @@ export function PropertyListing({ properties = [] }: { properties: any[] }) {
           <p className="text-muted-foreground">Temukan kost nyaman dengan fasilitas lengkap di lokasi strategis.</p>
         </div>
         
-        {/* 3. Looping data asli dari database */}
+        {/* Looping data asli dari database */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {properties.length > 0 ? (
             properties.map((kos) => (
               <PropertyCard 
                 key={kos.id} 
                 property={{
-                  
                   id: kos.id,
-                  name: kos.name,
-                  location: kos.city, 
-                  price: kos.price_per_month,
-                  image: kos.image_url || "/placeholder.svg",
-                  rating: 4.8,
-                  type: (kos.category || "campur").toLowerCase() as any,
+                  name: kos.name,     // Sesuai DB
+                  location: kos.city, // Sesuai DB
+                  
+                  // PERBAIKAN UTAMA DI SINI:
+                  // Gunakan 'kos.price' (sesuai database), BUKAN 'price_per_month'
+                  price: kos.price, 
+                  
+                  // Gunakan gambar dari DB, kalau kosong pakai placeholder
+                  image: kos.image_url || "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?q=80&w=2070&auto=format&fit=crop",
+                  
+                  rating: 4.8, // Hardcode dulu karena belum ada sistem rating
+                  type: "campur", // Default dulu
                 }} 
               />
             ))
           ) : (
-             <p>Belum ada data kost.</p>
+             <div className="col-span-full text-center py-10">
+                <p className="text-muted-foreground">Belum ada data kost yang tersedia.</p>
+             </div>
           )}
         </div>
       </div>
