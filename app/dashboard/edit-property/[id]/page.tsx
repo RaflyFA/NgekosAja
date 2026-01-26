@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft, Loader2, Save, UploadCloud } from "lucide-react"
 import Link from "next/link"
-import { useRouter, useParams } from "next/navigation" // useParams untuk ambil ID dari URL
+import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { getCurrentUserRole } from "@/lib/roles"
 

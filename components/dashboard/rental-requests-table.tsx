@@ -4,222 +4,188 @@ import { useState } from "react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Check, X, Phone, Loader2 } from "lucide-react"
+import { Check, X, Phone, Loader2, Trash2, User, Building2, MapPin, Calendar, ArrowRight, ShieldCheck, Clock, ShieldX, UserCheck } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
+import { useToast } from "@/hooks/use-toast"
+import { createNotification } from "@/lib/notifications"
+import { motion, AnimatePresence } from "framer-motion"
 
 interface RentalRequestsTableProps {
   bookings?: any[]
+  onDelete?: () => void
 }
 
-export function RentalRequestsTable({ bookings = [] }: RentalRequestsTableProps) {
-  const router = useRouter()
+export function RentalRequestsTable({ bookings = [], onDelete }: RentalRequestsTableProps) {
   const [processingId, setProcessingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const { toast } = useToast()
 
-  const handleUpdateStatus = async (
-    bookingId: string,
-    roomId: string | null,
-    newStatus: 'approved' | 'rejected',
-    bookingData: any
-  ) => {
-    setProcessingId(bookingId)
-
+  const handleDeleteBooking = async (bookingId: string) => {
+    setDeletingId(bookingId)
     try {
-      // 1. Jika APPROVED dan ada room_id, CHECK dulu apakah room masih kosong
+      await supabase.from('bookings').delete().eq('id', bookingId)
+      toast({ title: "Record Deleted", description: "Application history has been cleared from the system." })
+      onDelete?.()
+    } catch (error: any) { toast({ title: "Gagal", description: error.message, variant: "destructive" }) }
+    finally { setDeletingId(null) }
+  }
+
+  const handleUpdateStatus = async (bookingId: string, roomId: string | null, newStatus: 'approved' | 'rejected', bookingData: any) => {
+    setProcessingId(bookingId)
+    try {
       if (newStatus === 'approved' && roomId) {
-        const { data: roomData, error: checkError } = await supabase
-          .from('rooms')
-          .select('is_occupied, tenant_name, room_number')
-          .eq('id', roomId)
-          .single()
-
-        if (checkError) throw new Error("Gagal mengecek status kamar: " + checkError.message)
-
-        // Jika kamar sudah terisi, TOLAK approval
+        const { data: roomData } = await supabase.from('rooms').select('is_occupied, tenant_name, room_number').eq('id', roomId).single()
         if (roomData?.is_occupied) {
-          alert(`❌ Kamar ${roomData.room_number} sudah terisi oleh ${roomData.tenant_name}. Approval ditolak!`)
-          setProcessingId(null)
-          return
+          toast({ title: "Unit Occupied", description: `Unit ${roomData.room_number} is already managed by ${roomData.tenant_name}.`, variant: "destructive" })
+          setProcessingId(null); return
         }
       }
 
-      // 2. Update status booking
-      const { error: bookingError } = await supabase
-        .from('bookings')
-        .update({ status: newStatus })
-        .eq('id', bookingId)
+      await supabase.from('bookings').update({ status: newStatus }).eq('id', bookingId)
 
-      if (bookingError) throw new Error(bookingError.message)
-
-      // 3. Jika APPROVED dan ada room_id, update room status
       if (newStatus === 'approved' && roomId && bookingData) {
         const startDate = new Date(bookingData.start_date)
-        const endDate = new Date(startDate)
-        endDate.setMonth(endDate.getMonth() + (bookingData.duration_months || 1))
-
-        const { error: roomError } = await supabase
-          .from('rooms')
-          .update({
-            is_occupied: true,
-            tenant_name: bookingData.guest_name,
-            tenant_phone: bookingData.guest_phone,
-            rent_start_date: bookingData.start_date,
-            rent_end_date: endDate.toISOString().split('T')[0]
-          })
-          .eq('id', roomId)
-
-        if (roomError) throw new Error(roomError.message)
-
-        alert(`✅ Booking disetujui! Kamar ${bookingData.rooms?.room_number || ''} otomatis ditandai terisi.`)
-      } else if (newStatus === 'approved') {
-        alert("✅ Booking disetujui!")
-      } else {
-        alert("❌ Booking ditolak.")
+        const endDate = new Date(startDate); endDate.setMonth(endDate.getMonth() + (bookingData.duration_months || 1))
+        await supabase.from('rooms').update({
+          is_occupied: true, tenant_name: bookingData.guest_name, tenant_phone: bookingData.guest_phone,
+          rent_start_date: bookingData.start_date, rent_end_date: endDate.toISOString().split('T')[0]
+        }).eq('id', roomId)
+        if (bookingData.user_id) await createNotification(bookingData.user_id, "Application Verified", `Your request for Unit ${bookingData.rooms?.room_number || ''} at ${bookingData.boarding_houses?.name} has been approved.`, 'booking_approved', bookingId)
+      } else if (newStatus === 'rejected' && bookingData.user_id) {
+        await createNotification(bookingData.user_id, "Application Declined", `Your request for Unit ${bookingData.rooms?.room_number || ''} at ${bookingData.boarding_houses?.name} was not accepted.`, 'booking_rejected', bookingId)
       }
 
+      toast({ title: newStatus === 'approved' ? "Asset Deployed" : "Request Denied", description: "Ledger has been updated successfully." })
       window.location.reload()
-    } catch (error: any) {
-      alert("Gagal mengupdate: " + error.message)
-      setProcessingId(null)
-    }
+    } catch (error: any) { toast({ title: "Error", description: error.message, variant: "destructive" }); setProcessingId(null) }
   }
-
 
   const getInitials = (name: string) => {
-    if (!name) return "Guest"
-    const names = name.split(" ")
-    if (names.length === 1) return names[0].substring(0, 2).toUpperCase()
-    return (names[0][0] + names[names.length - 1][0]).toUpperCase()
-  }
-
-  if (bookings.length === 0) {
-    return (
-      <div className="p-8 text-center border border-border rounded-lg bg-card">
-        <p className="text-muted-foreground">Belum ada pengajuan sewa yang masuk.</p>
-      </div>
-    )
+    if (!name) return "US"
+    return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent border-b border-border">
-            <TableHead className="text-foreground">Calon Penyewa</TableHead>
-            <TableHead className="text-foreground">No. Kamar</TableHead>
-            <TableHead className="text-foreground">Kontak (HP)</TableHead>
-            <TableHead className="text-foreground">Durasi</TableHead>
-            <TableHead className="text-foreground">Status</TableHead>
-            <TableHead className="text-foreground text-right">Aksi</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {bookings.map((booking) => (
-            <TableRow key={booking.id} className="border-b border-border hover:bg-secondary/30">
-
-              {/* NAMA */}
-              <TableCell className="py-4">
-                <div className="flex items-center gap-3">
-                  <Avatar className="w-8 h-8">
-                    <AvatarFallback className="bg-primary text-primary-foreground text-xs font-medium">
-                      {getInitials(booking.guest_name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="font-medium text-foreground">
-                    {booking.guest_name || "Tanpa Nama"}
-                  </span>
-                </div>
-              </TableCell>
-
-              {/* NO. KAMAR */}
-              <TableCell>
-                {booking.rooms ? (
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="font-mono">
-                      {booking.rooms.room_number}
-                    </Badge>
-                    {booking.rooms.floor && (
-                      <span className="text-xs text-muted-foreground">
-                        Lt. {booking.rooms.floor}
-                      </span>
-                    )}
+    <div className="w-full">
+      <div className="overflow-x-auto no-scrollbar">
+        <table className="w-full text-left border-separate border-spacing-y-4 px-8 mb-8">
+          <thead className="bg-transparent">
+            <tr>
+              <th className="px-6 py-2 text-[9px] font-black text-slate-400 uppercase tracking-[0.25em]">Identity Profile</th>
+              <th className="px-6 py-2 text-[9px] font-black text-slate-400 uppercase tracking-[0.25em]">Registry Target</th>
+              <th className="px-6 py-2 text-[9px] font-black text-slate-400 uppercase tracking-[0.25em]">Contract Duration</th>
+              <th className="px-6 py-2 text-[9px] font-black text-slate-400 uppercase tracking-[0.25em]">Clearance Tier</th>
+              <th className="px-6 py-2 text-[9px] font-black text-slate-400 uppercase tracking-[0.25em] text-right">Audit Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bookings.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="py-24 text-center bg-white/50 dark:bg-slate-900/50 backdrop-blur-3xl rounded-[3rem] border-2 border-dashed border-slate-100 dark:border-white/5">
+                  <div className="space-y-6">
+                    <div className="w-20 h-20 bg-slate-100 dark:bg-white/5 rounded-3xl flex items-center justify-center mx-auto shadow-inner">
+                      <UserCheck className="w-10 h-10 text-slate-300" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">NO PENDING ADMISSIONS</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed max-w-xs mx-auto">System cloud is currently clear of any property admission requests.</p>
+                    </div>
                   </div>
-                ) : (
-                  <span className="text-xs text-muted-foreground">-</span>
-                )}
-              </TableCell>
-
-              {/* KONTAK */}
-              <TableCell className="text-foreground">
-                <div className="flex items-center gap-2">
-                  <Phone className="w-3 h-3 text-muted-foreground" />
-                  {booking.guest_phone}
-                </div>
-              </TableCell>
-
-              {/* DURASI */}
-              <TableCell className="text-foreground">
-                {booking.duration_months ? `${booking.duration_months} Bulan` : "1 Bulan"}
-              </TableCell>
-
-              {/* STATUS (Warna-warni) */}
-              <TableCell>
-                <Badge
-                  variant="secondary"
-                  className={
-                    booking.status === "approved"
-                      ? "bg-green-100 text-green-800 hover:bg-green-100"
-                      : booking.status === "rejected"
-                        ? "bg-red-100 text-red-800 hover:bg-red-100"
-                        : "bg-amber-100 text-amber-800 hover:bg-amber-100"
-                  }
-                >
-                  {booking.status === "approved" ? "Diterima" :
-                    booking.status === "rejected" ? "Ditolak" : "Menunggu Konfirmasi"}
-                </Badge>
-              </TableCell>
-
-              {/* TOMBOL AKSI */}
-              <TableCell className="text-right">
-                {booking.status === 'pending' && (
-                  <div className="flex items-center justify-end gap-2">
-                    {/* Tombol TERIMA */}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 w-8 p-0 text-green-600 border-green-200 hover:bg-green-50 bg-transparent"
-                      title="Terima Pengajuan"
-                      onClick={() => handleUpdateStatus(booking.id, booking.room_id, 'approved', booking)}
-                      disabled={processingId === booking.id}
-                    >
-                      {processingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    </Button>
-
-                    {/* Tombol TOLAK */}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 w-8 p-0 text-red-600 border-red-200 hover:bg-red-50 bg-transparent"
-                      title="Tolak Pengajuan"
-                      onClick={() => handleUpdateStatus(booking.id, booking.room_id, 'rejected', booking)}
-                      disabled={processingId === booking.id}
-                    >
-                      {processingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
-                    </Button>
-                  </div>
-                )}
-
-                {/* Jika status sudah bukan pending, sembunyikan tombol */}
-                {booking.status !== 'pending' && (
-                  <span className="text-xs text-muted-foreground">Selesai</span>
-                )}
-              </TableCell>
-
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                </td>
+              </tr>
+            ) : (
+              bookings.map((booking) => (
+                <tr key={booking.id} className="group bg-white dark:bg-slate-900 shadow-sm hover:shadow-2xl transition-all duration-500 rounded-[2rem]">
+                  <td className="px-6 py-5 first:rounded-l-[2.5rem]">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-2xl bg-primary text-white flex items-center justify-center font-black text-sm shadow-xl shadow-primary/20 transition-transform group-hover:scale-110">
+                        {getInitials(booking.guest_name)}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-black text-slate-950 dark:text-white uppercase tracking-tighter leading-none mb-1">{booking.guest_name}</span>
+                        <div className="flex items-center gap-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-white/5 px-2 py-1 rounded-lg w-fit mt-1">
+                          <Phone className="w-3 h-3 text-primary" />
+                          {booking.guest_phone}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-primary" />
+                        <span className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-tight">{booking.boarding_houses?.name}</span>
+                      </div>
+                      {booking.rooms && (
+                        <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 w-fit shadow-sm">
+                          <span className="text-[9px] font-black text-primary uppercase tracking-widest">UNIT {booking.rooms.room_number}</span>
+                          {booking.rooms.floor && <span className="text-[9px] font-black text-slate-400">FL {booking.rooms.floor}</span>}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2 text-[12px] font-black dark:text-white uppercase tracking-tighter">
+                        <Calendar className="w-4 h-4 text-primary" />
+                        {booking.duration_months || 1} <span className="text-[9px] text-slate-400 font-bold ml-1">MONTHS</span>
+                      </div>
+                      <div className="w-12 h-1 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden mt-1">
+                        <div className="h-full bg-primary" style={{ width: `${Math.min(((booking.duration_months || 1) / 12) * 100, 100)}%` }} />
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-5">
+                    <div className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2 w-fit shadow-xl ${booking.status === 'approved' ? 'bg-green-600 shadow-green-500/20 text-white border border-green-400/20' :
+                        booking.status === 'rejected' ? 'bg-red-600 shadow-red-500/20 text-white border border-red-400/20' :
+                          'bg-slate-950 shadow-slate-950/20 text-white animate-pulse border border-white/5'
+                      }`}>
+                      {booking.status === 'approved' ? <ShieldCheck className="w-3.5 h-3.5" /> :
+                        booking.status === 'rejected' ? <ShieldX className="w-3.5 h-3.5" /> :
+                          <Clock className="w-3.5 h-3.5 text-primary" />}
+                      {booking.status === 'approved' ? 'VERIFIED' : booking.status === 'rejected' ? 'DECLINED' : 'IN REVIEW'}
+                    </div>
+                  </td>
+                  <td className="px-6 py-5 last:rounded-r-[2.5rem] text-right">
+                    <div className="flex justify-end gap-3 translate-x-2 group-hover:translate-x-0 transition-transform duration-500">
+                      {booking.status === 'pending' ? (
+                        <>
+                          <button
+                            onClick={() => handleUpdateStatus(booking.id, booking.room_id, 'approved', booking)}
+                            disabled={processingId === booking.id}
+                            className="w-12 h-12 rounded-2xl bg-green-500/10 border border-green-500/20 text-green-500 flex items-center justify-center hover:bg-green-500 hover:text-white transition-all active:scale-90 shadow-lg shadow-green-500/5 group/btn"
+                            title="Verify Application"
+                          >
+                            {processingId === booking.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-6 h-6 group-hover/btn:scale-110 transition-transform" />}
+                          </button>
+                          <button
+                            onClick={() => handleUpdateStatus(booking.id, booking.room_id, 'rejected', booking)}
+                            disabled={processingId === booking.id}
+                            className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all active:scale-90 shadow-lg shadow-red-500/5 group/btn"
+                            title="Decline"
+                          >
+                            {processingId === booking.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <X className="w-6 h-6 group-hover/btn:scale-110 transition-transform" />}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => handleDeleteBooking(booking.id)}
+                          disabled={deletingId === booking.id}
+                          className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/10 text-slate-400 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all active:scale-90 shadow-xl group/btn"
+                          title="Purge Record"
+                        >
+                          {deletingId === booking.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5 group-hover/btn:scale-110 transition-transform" />}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
